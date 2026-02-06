@@ -32,11 +32,10 @@ if ($submission_id == 0 || empty($file_path)) {
 }
 
 // Check if API key is configured
-if (!defined('// Check if API key is configured
-if (!defined('sk-ant-api03-AIzaSyA_qOzbqHc5OV1kXLxUY4Opvb01EH0yPo0') {
+if (!defined('GEMINI_API_KEY') || empty(GEMINI_API_KEY) || GEMINI_API_KEY == 'AIzaSyA_qOzbqHc5OV1kXLxUY4Opvb01EH0yPo0') {
     echo json_encode([
         'success' => false,
-        'error' => 'API key not configured. Please set your Anthropic API key in config.php'
+        'error' => 'API key not configured. Please set your Gemini API key in config.php'
     ]);
     exit();
 }
@@ -54,9 +53,9 @@ try {
 
     $base64_content = base64_encode($file_content);
 
-    // Determine content type for Claude API
-    $content_type = (strpos($file_type, 'pdf') !== false) ? 'document' : 'image';
-
+    // Determine MIME type for Gemini API
+    $mime_type = $file_type;
+    
     // Prepare evaluation prompt
     $evaluation_prompt = "You are an expert academic evaluator. Please thoroughly evaluate this student's assignment submission.
 
@@ -87,39 +86,39 @@ Evaluation criteria:
 5. Completeness of the solution
 6. Evidence of original thinking vs AI-generated content";
 
-    // Prepare Claude API request
+    // Prepare Gemini API request
     $api_data = [
-        'model' => 'claude-sonnet-4-20250514',
-        'max_tokens' => 4000,
-        'messages' => [
+        'contents' => [
             [
-                'role' => 'user',
-                'content' => [
+                'parts' => [
                     [
-                        'type' => $content_type,
-                        'source' => [
-                            'type' => 'base64',
-                            'media_type' => $file_type,
+                        'inline_data' => [
+                            'mime_type' => $mime_type,
                             'data' => $base64_content
                         ]
                     ],
                     [
-                        'type' => 'text',
                         'text' => $evaluation_prompt
                     ]
                 ]
             ]
+        ],
+        'generationConfig' => [
+            'temperature' => 0.4,
+            'topK' => 32,
+            'topP' => 1,
+            'maxOutputTokens' => 4096,
         ]
     ];
 
-    // Call Claude API
-    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    // Call Gemini API
+    $url = GEMINI_API_URL . '?key=' . GEMINI_API_KEY;
+    
+    $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'x-api-key: ' . ANTHROPIC_API_KEY,
-        'anthropic-version: 2023-06-01'
+        'Content-Type: application/json'
     ]);
     curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($api_data));
     curl_setopt($ch, CURLOPT_TIMEOUT, 120); // 2 minute timeout
@@ -135,20 +134,24 @@ Evaluation criteria:
 
     if ($http_code != 200) {
         $error_response = json_decode($response, true);
-        $error_message = isset($error_response['error']['message']) ? 
-                        $error_response['error']['message'] : 
-                        "API request failed with code $http_code";
-        throw new Exception($error_message);
+        $error_message = "API request failed with code $http_code";
+        
+        if (isset($error_response['error']['message'])) {
+            $error_message = $error_response['error']['message'];
+        }
+        
+        throw new Exception($error_message . " - Response: " . substr($response, 0, 200));
     }
 
     $api_response = json_decode($response, true);
 
-    if (!isset($api_response['content'][0]['text'])) {
-        throw new Exception("Invalid API response format");
+    // Extract text from Gemini response
+    if (!isset($api_response['candidates'][0]['content']['parts'][0]['text'])) {
+        throw new Exception("Invalid API response format: " . json_encode($api_response));
     }
 
     // Parse evaluation JSON
-    $evaluation_text = trim($api_response['content'][0]['text']);
+    $evaluation_text = trim($api_response['candidates'][0]['content']['parts'][0]['text']);
     
     // Remove markdown code blocks if present
     $evaluation_text = preg_replace('/^```json\s*/i', '', $evaluation_text);
@@ -158,7 +161,7 @@ Evaluation criteria:
     $evaluation = json_decode($evaluation_text, true);
 
     if (json_last_error() !== JSON_ERROR_NONE) {
-        throw new Exception("Failed to parse evaluation JSON: " . json_last_error_msg() . " - Response: " . substr($evaluation_text, 0, 200));
+        throw new Exception("Failed to parse evaluation JSON: " . json_last_error_msg() . " - Response: " . substr($evaluation_text, 0, 500));
     }
 
     // Validate evaluation structure

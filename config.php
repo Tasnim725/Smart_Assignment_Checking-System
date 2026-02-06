@@ -12,10 +12,11 @@ define('DB_USER', 'root');
 define('DB_PASS', ''); // Default XAMPP password is empty
 define('DB_NAME', 'sacs');
 
-// Anthropic API Configuration
-// IMPORTANT: Replace with your actual API key
-define('ANTHROPIC_API_KEY', 'sk-ant-api03-YOUR-API-KEY-HERE');
-// Get your API key from: https://console.anthropic.com/
+// Google Gemini API Configuration
+// IMPORTANT: Replace with your actual Gemini API key
+// Get your free API key from: https://makersuite.google.com/app/apikey
+define('GEMINI_API_KEY', 'YOUR_GEMINI_API_KEY_HERE');
+define('GEMINI_API_URL', 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent');
 
 // File upload settings
 define('UPLOAD_DIR', __DIR__ . '/uploads/');

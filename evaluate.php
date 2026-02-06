@@ -2,32 +2,14 @@
 require_once 'config.php';
 
 $submission_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-
-if ($submission_id == 0) {
-    die("Error: Invalid submission ID");
-}
+if ($submission_id == 0) die("Error: Invalid submission ID");
 
 $conn = getDBConnection();
-
-// Fetch submission details
 $stmt = $conn->prepare("SELECT s.*, a.title, a.description FROM submissions s JOIN assignments a ON s.assignment_id = a.id WHERE s.id = ?");
-
-if (!$stmt) {
-    $conn->close();
-    die("Error: Database preparation failed");
-}
-
 $stmt->bind_param("i", $submission_id);
 $stmt->execute();
-$result = $stmt->get_result();
-$submission = $result->fetch_assoc();
-
-if (!$submission) {
-    $stmt->close();
-    $conn->close();
-    die("Error: Submission not found");
-}
-
+$submission = $stmt->get_result()->fetch_assoc();
+if (!$submission) die("Error: Submission not found");
 $stmt->close();
 $conn->close();
 ?>
@@ -36,156 +18,100 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Evaluation - Smart Assignment Checker</title>
-    <link rel="stylesheet" href="style.css">
+    <title>AI Evaluation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Poppins', sans-serif; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; }
+        .eval-card { background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); padding: 40px; }
+        .spinner { width: 60px; height: 60px; border: 6px solid #f3f3f3; border-top: 6px solid #6366f1; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .step { padding: 15px; background: #f5f5f5; border-radius: 10px; margin: 10px 0; transition: all 0.5s; }
+        .step.active { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; transform: scale(1.05); }
+    </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>🤖 AI Evaluation in Progress</h1>
-        </header>
-
-        <div class="content">
-            <div class="evaluation-container">
-                <div id="loading" class="loading-screen">
-                    <div class="spinner"></div>
-                    <h2>Analyzing Your Submission...</h2>
-                    <p>Please wait while our AI evaluates your work</p>
-                    <div class="progress-steps">
-                        <div class="step active">📄 Reading document</div>
-                        <div class="step">🔍 Analyzing content</div>
-                        <div class="step">🤖 Detecting AI usage</div>
-                        <div class="step">✅ Generating feedback</div>
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="eval-card">
+                    <div id="loading" class="text-center">
+                        <div class="spinner"></div>
+                        <h2 class="mt-4">🤖 AI Evaluation in Progress</h2>
+                        <p class="text-muted">Please wait while we analyze the submission...</p>
+                        <div class="mt-4">
+                            <div class="step active">📄 Reading document</div>
+                            <div class="step">🔍 Analyzing content</div>
+                            <div class="step">🤖 Detecting AI usage</div>
+                            <div class="step">✅ Generating feedback</div>
+                        </div>
                     </div>
-                </div>
-
-                <div id="evaluation-result" style="display: none;">
-                    <!-- Results will be inserted here by JavaScript -->
+                    <div id="evaluation-result" style="display: none;"></div>
                 </div>
             </div>
         </div>
     </div>
-
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        const submissionId = <?php echo json_encode($submission_id, JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const assignmentTitle = <?php echo json_encode($submission['title'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const assignmentDescription = <?php echo json_encode($submission['description'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const studentName = <?php echo json_encode($submission['student_name'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const studentId = <?php echo json_encode($submission['student_id'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const filePath = <?php echo json_encode($submission['file_path'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-        const fileType = <?php echo json_encode($submission['file_type'], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
-
-        // Simulate progress steps
-        let currentStep = 0;
+        const submissionData = <?php echo json_encode([
+            'submission_id' => $submission_id,
+            'assignment_title' => $submission['title'],
+            'assignment_description' => $submission['description'],
+            'student_name' => $submission['student_name'],
+            'student_id' => $submission['student_id'],
+            'file_path' => $submission['file_path'],
+            'file_type' => $submission['file_type']
+        ], JSON_HEX_TAG | JSON_HEX_AMP); ?>;
+        
+        let step = 0;
         const steps = document.querySelectorAll('.step');
-        const progressInterval = setInterval(() => {
-            if (currentStep < steps.length) {
-                steps[currentStep].classList.add('active');
-                currentStep++;
+        setInterval(() => { if (step < steps.length) steps[step++].classList.add('active'); }, 2000);
+        
+        fetch('ai_evaluate.php', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(submissionData)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const e = data.evaluation;
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('evaluation-result').style.display = 'block';
+                document.getElementById('evaluation-result').innerHTML = `
+                    <div class="text-center mb-4">
+                        <h3>✅ Evaluation Complete</h3>
+                        <div class="d-flex justify-content-center align-items-center gap-4 my-4">
+                            <div style="width: 100px; height: 100px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; font-size: 3rem; font-weight: bold;">${e.grade}</div>
+                            <div style="font-size: 2.5rem; font-weight: bold;">${e.overall_score}/100</div>
+                        </div>
+                    </div>
+                    <div class="alert alert-${e.ai_probability > 70 ? 'danger' : e.ai_probability > 40 ? 'warning' : 'success'}">
+                        <h5>🤖 AI Detection: ${e.ai_probability}%</h5>
+                        <p class="mb-0">${e.ai_analysis}</p>
+                    </div>
+                    <div class="mb-3">
+                        <h5>💪 Strengths</h5>
+                        <ul class="list-group">${e.strengths.map(s => '<li class="list-group-item">'+s+'</li>').join('')}</ul>
+                    </div>
+                    <div class="mb-3">
+                        <h5>⚠️ Improvements Needed</h5>
+                        <ul class="list-group">${e.weaknesses.map(w => '<li class="list-group-item">'+w+'</li>').join('')}</ul>
+                    </div>
+                    <div class="text-center mt-4">
+                        <a href="teacher_dashboard.php" class="btn btn-primary">Back to Dashboard</a>
+                    </div>
+                `;
+            } else {
+                document.getElementById('loading').innerHTML = '<div class="alert alert-danger">❌ ' + data.error + '</div>';
             }
-        }, 2000);
-
-        // Call AI evaluation
-        async function evaluateSubmission() {
-            try {
-                const response = await fetch('ai_evaluate.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        submission_id: submissionId,
-                        assignment_title: assignmentTitle,
-                        assignment_description: assignmentDescription,
-                        student_name: studentName,
-                        student_id: studentId,
-                        file_path: filePath,
-                        file_type: fileType
-                    })
-                });
-
-                const data = await response.json();
-                clearInterval(progressInterval);
-
-                if (data.success) {
-                    displayResults(data.evaluation);
-                } else {
-                    throw new Error(data.error || 'Evaluation failed');
-                }
-            } catch (error) {
-                clearInterval(progressInterval);
-                document.getElementById('loading').innerHTML = 
-                    '<div class="error-message">' +
-                    '<h2>❌ Evaluation Failed</h2>' +
-                    '<p>' + escapeHtml(error.message) + '</p>' +
-                    '<a href="index.php" class="btn-primary">Return to Home</a>' +
-                    '</div>';
-            }
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
-
-        function displayResults(evaluation) {
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('evaluation-result').style.display = 'block';
-
-            const aiProbabilityClass = evaluation.ai_probability > 70 ? 'high' : 
-                                       evaluation.ai_probability > 40 ? 'medium' : 'low';
-
-            const strengthsHtml = evaluation.strengths.map(s => '<li>' + escapeHtml(s) + '</li>').join('');
-            const weaknessesHtml = evaluation.weaknesses.map(w => '<li>' + escapeHtml(w) + '</li>').join('');
-            const errorsHtml = evaluation.errors.map(e => '<li>' + escapeHtml(e) + '</li>').join('');
-            const suggestionsHtml = evaluation.suggestions.map(s => '<li>' + escapeHtml(s) + '</li>').join('');
-
-            document.getElementById('evaluation-result').innerHTML = 
-                '<div class="result-header">' +
-                '<h2>✅ Evaluation Complete</h2>' +
-                '<div class="grade-display">' +
-                '<div class="grade-circle">' + escapeHtml(evaluation.grade) + '</div>' +
-                '<div class="score">' + evaluation.overall_score + '/100</div>' +
-                '</div>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>🤖 AI Content Detection</h3>' +
-                '<div class="ai-meter">' +
-                '<div class="ai-bar ' + aiProbabilityClass + '" style="width: ' + evaluation.ai_probability + '%">' +
-                evaluation.ai_probability + '%' +
-                '</div>' +
-                '</div>' +
-                '<p class="ai-analysis">' + escapeHtml(evaluation.ai_analysis) + '</p>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>💪 Strengths</h3>' +
-                '<ul class="feedback-list strengths">' + strengthsHtml + '</ul>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>⚠️ Areas for Improvement</h3>' +
-                '<ul class="feedback-list weaknesses">' + weaknessesHtml + '</ul>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>❌ Specific Errors Found</h3>' +
-                '<ul class="feedback-list errors">' + errorsHtml + '</ul>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>📝 Detailed Feedback</h3>' +
-                '<p class="detailed-feedback">' + escapeHtml(evaluation.feedback) + '</p>' +
-                '</div>' +
-                '<div class="result-section">' +
-                '<h3>💡 Suggestions for Improvement</h3>' +
-                '<ul class="feedback-list suggestions">' + suggestionsHtml + '</ul>' +
-                '</div>' +
-                '<div class="action-buttons">' +
-                '<a href="view_submissions.php" class="btn-primary">View All Submissions</a>' +
-                '<a href="index.php" class="btn-secondary">Submit Another</a>' +
-                '</div>';
-        }
-
-        // Start evaluation when page loads
-        evaluateSubmission();
+        })
+        .catch(err => {
+            document.getElementById('loading').innerHTML = '<div class="alert alert-danger">❌ Evaluation failed: ' + err.message + '</div>';
+        });
     </script>
 </body>
 </html>
